@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+
+bin/*
+!bin/throwback/
+bin/throwback/*
+!bin/throwback/LaunchR6.bat
+downloads/
+
+config.toml
+.lock
+.rpc.lock

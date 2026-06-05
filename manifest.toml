@@ -1,0 +1,355 @@
+app = 359550
+depot_main = 377237
+depot_lang = 359551
+depot_other = 377238
+default_loader = "uplay_r1"
+
+[Y1S0_Vanilla]
+label = "Y1S0 Vanilla"
+manifest_main = "8358812283631269928"
+manifest_other = "6835384933146381100"
+manifest_lang = "3893422760579204530"
+size_gb = 14.2
+liberator = true
+
+[Y1S1_BlackIce]
+label = "Y1S1 Black Ice"
+manifest_main = "5188997148801516344"
+manifest_other = "5362991837480196824"
+manifest_lang = "7932785808040895147"
+size_gb = 16.7
+liberator = true
+
+[Y1S2_DustLine]
+label = "Y1S2 Dust Line"
+manifest_main = "2303064029242396590"
+manifest_other = "3040224537841664111"
+manifest_lang = "2206497318678061176"
+size_gb = 20.9
+liberator = true
+
+[Y1S3_SkullRain]
+label = "Y1S3 Skull Rain"
+manifest_main = "5819137024728546741"
+manifest_other = "2956768406107766016"
+manifest_lang = "5851804596427790505"
+size_gb = 25.1
+liberator = true
+
+[Y1S4_RedCrow]
+label = "Y1S4 Red Crow"
+manifest_main = "3576607363557872807"
+manifest_other = "912564683190696342"
+manifest_lang = "8569920171217002292"
+size_gb = 28.5
+liberator = true
+
+[Y2S1_VelvetShell]
+label = "Y2S1 Velvet Shell"
+manifest_main = "2248734317261478192"
+manifest_other = "2687181326074258760"
+manifest_lang = "8006071763917433748"
+size_gb = 33.2
+liberator = true
+
+[Y2S2_Health]
+label = "Y2S2 Health"
+manifest_main = "5875987479498297665"
+manifest_other = "8542242518901049325"
+manifest_lang = "708773000306432190"
+size_gb = 34.0
+liberator = true
+
+[Y2S3_BloodOrchid]
+label = "Y2S3 Blood Orchid"
+manifest_main = "6708129824495912434"
+manifest_other = "4662662335520989204"
+manifest_lang = "1613631671988840841"
+size_gb = 34.3
+liberator = true
+
+[Y2S4_WhiteNoise]
+label = "Y2S4 White Noise"
+manifest_main = "8748734086032257441"
+manifest_other = "8175359039160965183"
+manifest_lang = "4221297486420648079"
+size_gb = 48.7
+liberator = true
+ct = "Y2S4.CT"
+
+[Y3S1_Chimera]
+label = "Y3S1 Chimera"
+manifest_main = "5071357104726974256"
+manifest_other = "4768963659370299631"
+manifest_lang = "4701787239566783972"
+size_gb = 58.8
+liberator = true
+
+[Y3S2_ParaBellum]
+label = "Y3S2 Para Bellum"
+manifest_main = "6507886921175556869"
+manifest_other = "7995779530685147208"
+manifest_lang = "8765715607275074515"
+size_gb = 63.3
+liberator = true
+
+[Y3S3_GrimSky]
+label = "Y3S3 Grim Sky"
+manifest_main = "5562094852451837435"
+manifest_other = "3144556314994867170"
+manifest_lang = "7781202564071310413"
+size_gb = 72.6
+liberator = true
+
+[Y3S4_WindBastion]
+label = "Y3S4 Wind Bastion"
+manifest_main = "6502258854032233436"
+manifest_other = "3144556314994867170"
+manifest_lang = "7659555540733025386"
+size_gb = 76.9
+liberator = true
+
+[Y4S1_BurntHorizon]
+label = "Y4S1 Burnt Horizon"
+manifest_main = "8356277316976403078"
+manifest_other = "3777349673527123995"
+manifest_lang = "5935578581006804383"
+size_gb = 58.8
+liberator = true
+
+[Y4S2_PhantomSight]
+label = "Y4S2 Phantom Sight"
+manifest_main = "693082837425613508"
+manifest_other = "3326664059403997209"
+manifest_lang = "5408324128694463720"
+size_gb = 67.1
+liberator = true
+
+[Y4S3_EmberRise]
+label = "Y4S3 Ember Rise"
+manifest_main = "3546781236735558235"
+manifest_other = "684480090862996679"
+manifest_lang = "7869081741739849703"
+size_gb = 69.6
+liberator = true
+
+[Y4S4_ShiftingTides]
+label = "Y4S4 Shifting Tides"
+manifest_main = "299124516841461614"
+manifest_other = "510172308722680354"
+manifest_lang = "1842268638395240106"
+size_gb = 75.2
+liberator = true
+
+[Y5S1_VoidEdge]
+label = "Y5S1 Void Edge"
+manifest_main = "4736360397583523381"
+manifest_other = "2583838033617047180"
+manifest_lang = "6296533808765702678"
+size_gb = 74.3
+
+[Y5S2_SteelWave]
+label = "Y5S2 Steel Wave"
+manifest_main = "4367817844736324940"
+manifest_other = "5838065097101371940"
+manifest_lang = "893971391196952070"
+size_gb = 81.3
+
+[Y5S3_ShadowLegacy]
+label = "Y5S3 Shadow Legacy"
+manifest_main = "85893637567200342"
+manifest_other = "4020038723910014041"
+manifest_lang = "3089981610366186823"
+size_gb = 88.0
+ct = "Y5S3.CT"
+
+[Y5S3_ShadowLegacy.heatedmetal]
+manifest_main = "85893637567200342"
+manifest_other = "4020038723910014041"
+manifest_lang = "3089981610366186823"
+size_gb = 88.0
+hm_version = "0.2.3"
+
+[Y5S4_NeonDawn]
+label = "Y5S4 Neon Dawn"
+manifest_main = "4713320084981112320"
+manifest_other = "3560446343418579092"
+manifest_lang = "3711873929777458413"
+size_gb = 57.0
+ct = "Y5S4.CT"
+
+[Y5S4_NeonDawn.heatedmetal]
+manifest_main = "3390446325154338855"
+manifest_other = "3175150742361965235"
+manifest_lang = "6947060999143280245"
+size_gb = 57.0
+hm_version = "latest"
+
+[Y6S1_CrimsonHeist]
+label = "Y6S1 Crimson Heist"
+manifest_main = "7890853311380514304"
+manifest_other = "6130917224459224462"
+manifest_lang = "7485515457663576274"
+size_gb = 44.9
+
+[Y6S2_NorthStar]
+label = "Y6S2 North Star"
+manifest_main = "8733653062998518164"
+manifest_other = "6767916709017546201"
+manifest_lang = "809542866761090243"
+size_gb = 62.1
+ct = "Y6S2.CT"
+
+[Y6S3_CrystalGuard]
+label = "Y6S3 Crystal Guard"
+manifest_main = "4859695099882698284"
+manifest_other = "5161489294178683219"
+manifest_lang = "6526531850721822265"
+size_gb = 50.3
+loader = "upc_r1"
+
+[Y6S4_HighCalibre]
+label = "Y6S4 High Calibre"
+manifest_main = "2637055726475611418"
+manifest_other = "2074678920289758165"
+manifest_lang = "8627214406801860013"
+size_gb = 54.2
+loader = "upc_r2"
+
+[Y7S1_DemonVeil]
+label = "Y7S1 Demon Veil"
+manifest_main = "1970003626423861715"
+manifest_other = "2178080523228113690"
+manifest_lang = "8323869632165751287"
+size_gb = 58.8
+loader = "upc_r2"
+
+[Y7S2_VectorGlare]
+label = "Y7S2 Vector Glare"
+manifest_main = "1363132201391540345"
+manifest_other = "4500117484519539380"
+manifest_lang = "133280937611742404"
+size_gb = 58.8
+loader = "upc_r2"
+ct = "Y7S2.CT"
+
+[Y7S3_BrutalSwarm]
+label = "Y7S3 Brutal Swarm"
+manifest_main = "6425223567680952075"
+manifest_other = "4623590620762156001"
+manifest_lang = "5906302942203575464"
+size_gb = 49.2
+loader = "upc_r2"
+
+[Y7S4_SolarRaid]
+label = "Y7S4 Solar Raid"
+manifest_main = "4466027729495813039"
+manifest_other = "5107849703917033235"
+manifest_lang = "1819898955518120444"
+size_gb = 51.1
+loader = "upc_r2"
+ct = "Y7S4.CT"
+
+[Y8S1_CommandingForce]
+label = "Y8S1 Commanding Force"
+manifest_main = "3275824905781062648"
+manifest_other = "1252692309389076318"
+manifest_lang = "5863062164463920572"
+size_gb = 53.8
+loader = "upc_r2"
+
+[Y8S2_DreadFactor]
+label = "Y8S2 Dread Factor"
+manifest_main = "4313757428310343948"
+manifest_other = "4293396692730784956"
+manifest_lang = "5581702357198571389"
+size_gb = 55.1
+loader = "upc_r2"
+
+[Y8S3_HeavyMettle]
+label = "Y8S3 Heavy Mettle"
+manifest_main = "2068160275622519212"
+manifest_other = "2579928666708989224"
+manifest_lang = "3005637025719884427"
+size_gb = 54.8
+loader = "upc_r2"
+
+[Y8S4_DeepFreeze]
+label = "Y8S4 Deep Freeze"
+manifest_main = "7646647065987620875"
+manifest_other = "8339919149418587132"
+manifest_lang = "4957295777170965935"
+size_gb = 52.9
+loader = "upc_r2"
+
+[Y9S1_DeadlyOmen]
+label = "Y9S1 Deadly Omen"
+manifest_main = "1959067516419454682"
+manifest_other = "1619182300337183882"
+manifest_lang = "1140469899661941149"
+size_gb = 54.4
+loader = "upc_r2"
+
+[Y9S2_NewBlood]
+label = "Y9S2 New Blood"
+manifest_main = "8160812118480939262"
+manifest_other = "2207285510020603118"
+manifest_lang = "3303120421075579181"
+size_gb = 56.0
+loader = "upc_r2"
+
+[Y9S3_TwinShells]
+label = "Y9S3 Twin Shells"
+manifest_main = "4296569502001540403"
+manifest_other = "3038245830342960035"
+manifest_lang = "825321500774263546"
+size_gb = 59.2
+loader = "upc_r2"
+
+[Y9S4_CollisionPoint]
+label = "Y9S4 Collision Point"
+manifest_main = "9207916394092784817"
+manifest_other = "6303744364362141965"
+manifest_lang = "3039751959139581613"
+size_gb = 59.2
+loader = "upc_r2"
+
+[Y10S1_PrepPhase]
+label = "Y10S1 Prep Phase"
+manifest_main = "8382986432868135995"
+manifest_other = "3364322644809414267"
+manifest_lang = "2619322944995294928"
+size_gb = 51.4
+loader = "upc_r2"
+
+[Y10S2_DayBreak]
+label = "Y10S2 Day Break"
+manifest_main = "6185866687945877979"
+manifest_other = "1824670522228133032"
+manifest_lang = "6061565907083200123"
+size_gb = 57.6
+loader = "upc_r2"
+
+[Y10S3_HighStakes]
+label = "Y10S3 High Stakes"
+manifest_main = "6414584647978564432"
+manifest_other = "1658045533304550915"
+manifest_lang = "2991287519065391053"
+size_gb = 64.1
+loader = "upc_r2"
+
+[Y10S4_TenfoldPursuit]
+label = "Y10S4 Tenfold Pursuit"
+manifest_main = "5312359447964179543"
+manifest_other = "6303744364362141965"
+manifest_lang = "4662717791508703860"
+size_gb = 64.1
+loader = "upc_r2"
+
+[Y11S1_SilentHunt]
+label = "Y11S1 Silent Hunt"
+manifest_main = "6538965566725574323"
+manifest_other = "5822704009378799838"
+manifest_lang = "4262752188904831422"
+size_gb = 68.9
+loader = "upc_r2"

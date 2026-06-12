@@ -75,7 +75,6 @@ manifest_other = "8175359039160965183"
 manifest_lang = "4221297486420648079"
 size_gb = 48.7
 liberator = true
-ct = "Y2S4.CT"
 
 [Y3S1_Chimera]
 label = "Y3S1 Chimera"
@@ -161,7 +160,7 @@ manifest_main = "85893637567200342"
 manifest_other = "4020038723910014041"
 manifest_lang = "3089981610366186823"
 size_gb = 88.0
-ct = "Y5S3.CT"
+liberator = true
 
 [Y5S3_ShadowLegacy.heatedmetal]
 manifest_main = "85893637567200342"
@@ -176,7 +175,6 @@ manifest_main = "4713320084981112320"
 manifest_other = "3560446343418579092"
 manifest_lang = "3711873929777458413"
 size_gb = 57.0
-ct = "Y5S4.CT"
 
 [Y5S4_NeonDawn.heatedmetal]
 manifest_main = "3390446325154338855"
@@ -198,7 +196,7 @@ manifest_main = "8733653062998518164"
 manifest_other = "6767916709017546201"
 manifest_lang = "809542866761090243"
 size_gb = 62.1
-ct = "Y6S2.CT"
+liberator = true
 
 [Y6S3_CrystalGuard]
 label = "Y6S3 Crystal Guard"
@@ -231,7 +229,7 @@ manifest_other = "4500117484519539380"
 manifest_lang = "133280937611742404"
 size_gb = 58.8
 loader = "upc_r2"
-ct = "Y7S2.CT"
+liberator = true
 
 [Y7S3_BrutalSwarm]
 label = "Y7S3 Brutal Swarm"
@@ -248,7 +246,7 @@ manifest_other = "5107849703917033235"
 manifest_lang = "1819898955518120444"
 size_gb = 51.1
 loader = "upc_r2"
-ct = "Y7S4.CT"
+liberator = true
 
 [Y8S1_CommandingForce]
 label = "Y8S1 Commanding Force"

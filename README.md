@@ -46,94 +46,11 @@ Pick a season from the **Game downloader** option and log in with your Steam acc
 > [!IMPORTANT]
 > Mila downloads the season files directly from Steam, so you log in with a Steam account that owns Rainbow Six Siege. Your password is never stored — DepotDownloader keeps only an encrypted access token, just like the Steam client. To log out, open Help > *Does my Steam login get stored?* > Log out.
 
-## Unlock-All
+## Liberator
 
-For Y1S0 up to Y4S4, confirm *Enable Liberator?* at the download prompt. <br/>
-For the seasons below, Unlock-All requires Cheat Engine. [Download](https://cheatengine.org) the Windows version, move it to `bin/` and rename it to `CheatEngine.exe`!
+Confirm *Enable Liberator?* at the download prompt — Mila fetches [Liberator](https://github.com/Xeralin/Liberator) automatically and wires it into the season's launch script. For seasons already in `downloads/`, toggle **Liberator** in *Settings*.
 
-| Season | Name          |
-|--------|---------------|
-| Y2S4   | White Noise   |
-| Y5S3   | Shadow Legacy |
-| Y5S4   | Neon Dawn     |
-| Y6S2   | North Star    |
-| Y7S2   | Vector Glare  |
-| Y7S4   | Solar Raid    |
-
-When downloading a supported season, confirm *Enable Unlock-All?* at the download prompt. Click through the Cheat Engine installer window when it opens — **deny any bundled offers** to avoid adware.
-
-> [!NOTE]
-> **First run:** Tick *Always* on the Lua script prompt, click **Yes**, and restart the game once. The Unlock-All enables 7 seconds after Cheat Engine attaches to the game.
->
-> ![Lua](media/lua.png)
-
-**Y7S4 and Y7S2 also require a plugin, which you can add as follows:**
-
-1. Go to Edit > Settings > Plugins
-2. Click *Add New*
-3. In the file dialog, navigate to `/` drive > `home/<user>/.../Mila/plugins/stealthedit/umstealthedit-x86_64.dll`
-4. Make sure the checkbox is checked
-5. Click OK
-
-**To add a custom cheat table, follow these steps:**
-
-1. Drop your `<filename>.CT` file into `plugins/ct`
-2. Open your file with an text editor
-3. Between `<UserdefinedSymbols/>` and `</CheatTable>`, add the following `Lua script` block
-
-<details>
-<summary>Lua script</summary>
-
-```lua
-  <LuaScript>local enabled = false
-local stablePolls = 0
-
-local pollTimer = createTimer(MainForm)
-pollTimer.Interval = 200
-pollTimer.OnTimer = function(t)
-  if enabled then
-    timer_setEnabled(t, false)
-    return
-  end
-
-  local newestPid = 0
-  for pid, name in pairs(getProcessList()) do
-    if name:find("^RainbowSix") then
-      local n = tonumber(pid)
-      if n and n &gt; newestPid then newestPid = n end
-    end
-  end
-  if newestPid == 0 then
-    stablePolls = 0
-    return
-  end
-
-  if getOpenedProcessID() ~= newestPid then
-    openProcess(newestPid)
-    stablePolls = 0
-    return
-  end
-
-  stablePolls = stablePolls + 1
-  if stablePolls &lt; 35 then return end
-
-  for i = 0, AddressList.Count - 1 do
-    local mr = AddressList.getMemoryRecord(i)
-    if mr and mr.Type == vtAutoAssembler then
-      mr.Active = true
-      break
-    end
-  end
-  enabled = true
-  timer_setEnabled(t, false)
-end
-</LuaScript>
-```
-
-</details>
-
-4. Add `ct = "<filename>.CT"` to the season's block in `manifest.toml`
-5. If the season is already in `downloads/`, toggle **Unlock-All** in *Settings* to refresh `LaunchR6.bat`
+The unlock enables a few seconds after the game launches. Supported seasons carry `liberator = true` in `manifest.toml`.
 
 ## RadminVPN
 

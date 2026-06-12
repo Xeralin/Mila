@@ -1,9 +1,22 @@
+import fcntl
+import os
 import tomllib
-from typing import TypeVar
+from typing import TextIO, TypeVar
 
-from mila.constants import CONFIG_FILE
+from mila.constants import CONFIG_FILE, LOCK_FILE
+from mila.style import step_warn
 
 T = TypeVar("T")
+
+
+def acquire_single_instance_lock() -> TextIO | None:
+    fp = open(LOCK_FILE, "w")
+    try:
+        fcntl.flock(fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        fp.close()
+        return None
+    return fp
 
 
 def load_config() -> dict:
@@ -13,6 +26,9 @@ def load_config() -> dict:
         with open(CONFIG_FILE, "rb") as f:
             return tomllib.load(f)
     except tomllib.TOMLDecodeError:
+        broken = CONFIG_FILE.with_name(CONFIG_FILE.name + ".broken")
+        CONFIG_FILE.replace(broken)
+        step_warn(f"config.toml is malformed — saved as {broken.name}, starting with defaults")
         return {}
 
 
@@ -27,7 +43,9 @@ def save_config(cfg: dict) -> None:
             lines.append(f"{k} = {str(v).lower()}")
         else:
             lines.append(f"{k} = {v}")
-    CONFIG_FILE.write_text("\n".join(lines) + "\n")
+    tmp = CONFIG_FILE.with_name(CONFIG_FILE.name + ".tmp")
+    tmp.write_text("\n".join(lines) + "\n")
+    os.replace(tmp, CONFIG_FILE)
 
 
 def get_setting(cfg: dict, key: str, default: T) -> T:

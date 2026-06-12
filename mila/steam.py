@@ -7,7 +7,6 @@ import zlib
 from pathlib import Path
 
 from mila.constants import (
-    CE_INSTALLER,
     PROTON_BUILTIN,
     SHORTCUTS_VDF,
     STEAM_COMMON,
@@ -20,19 +19,25 @@ from mila.constants import (
 from mila.input import confirm, go_back, select
 from mila.manifest import hm_display_name, installed_downloads, launcher_name, resolve_install
 from mila.spinner import Spinner
-from mila.style import clear, mag, screen_header, step_fail, step_pass, step_warn
+from mila.style import clear, mag, screen_header, step_fail, step_warn
 
 
-def _is_steam_running() -> bool:
-    return subprocess.run(
-        ["pgrep", "-x", "steam"], capture_output=True
-    ).returncode == 0
+def is_steam_running() -> bool:
+    try:
+        return subprocess.run(
+            ["pgrep", "-x", "steam"], capture_output=True
+        ).returncode == 0
+    except FileNotFoundError:
+        return False
 
 
-def _is_game_running() -> bool:
-    return subprocess.run(
-        ["pgrep", "-f", r"RainbowSix.*\.exe"], capture_output=True
-    ).returncode == 0
+def is_game_running() -> bool:
+    try:
+        return subprocess.run(
+            ["pgrep", "-f", r"RainbowSix.*\.exe"], capture_output=True
+        ).returncode == 0
+    except FileNotFoundError:
+        return False
 
 
 def _wait_for(check_running, title: str, warn_msg: str) -> bool:
@@ -54,11 +59,11 @@ def _wait_for(check_running, title: str, warn_msg: str) -> bool:
 
 
 def wait_for_game_closed(title: str) -> bool:
-    return _wait_for(_is_game_running, title, "Close the game to continue")
+    return _wait_for(is_game_running, title, "Close the game to continue")
 
 
 def wait_for_steam_closed(title: str) -> bool:
-    return _wait_for(_is_steam_running, title, "Close Steam to apply")
+    return _wait_for(is_steam_running, title, "Close Steam to apply")
 
 
 def _parse_vdf(data: bytes) -> dict:
@@ -67,11 +72,21 @@ def _parse_vdf(data: bytes) -> dict:
     def read_string() -> str:
         nonlocal pos
         start = pos
-        while data[pos] != 0:
+        while pos < len(data) and data[pos] != 0:
             pos += 1
+        if pos >= len(data):
+            raise ValueError("Truncated string in binary VDF")
         s = data[start:pos].decode("utf-8", errors="replace")
         pos += 1
         return s
+
+    def read_int(size: int) -> int:
+        nonlocal pos
+        if pos + size > len(data):
+            raise ValueError("Truncated integer in binary VDF")
+        value = int.from_bytes(data[pos:pos + size], "little", signed=False)
+        pos += size
+        return value
 
     def read_map() -> dict:
         nonlocal pos
@@ -87,13 +102,11 @@ def _parse_vdf(data: bytes) -> dict:
             elif t == 0x01:
                 result[key] = read_string()
             elif t == 0x02:
-                result[key] = int.from_bytes(data[pos:pos + 4], "little", signed=False)
-                pos += 4
+                result[key] = read_int(4)
             elif t == 0x07:
-                result[key] = int.from_bytes(data[pos:pos + 8], "little", signed=False)
-                pos += 8
+                result[key] = read_int(8)
             else:
-                return result
+                raise ValueError(f"Unknown type byte 0x{t:02x} in binary VDF")
         return result
 
     return read_map()
@@ -129,6 +142,14 @@ def _serialize_vdf(obj: dict) -> bytes:
 
     w_map(obj)
     return bytes(buf)
+
+
+def _backup_and_write(path: Path, data: bytes) -> None:
+    if path.exists():
+        shutil.copy2(path, path.with_name(path.name + ".bak"))
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_bytes(data)
+    os.replace(tmp, path)
 
 
 def _active_userdata() -> Path | None:
@@ -171,7 +192,7 @@ def find_existing_appid(exe: Path) -> int | None:
     return None
 
 
-def _list_protons() -> list[dict]:
+def list_protons() -> list[dict]:
     protons: list[dict] = []
     for dirname, internal, display in PROTON_BUILTIN:
         binary = STEAM_COMMON / dirname / "proton"
@@ -197,7 +218,7 @@ def _list_protons() -> list[dict]:
 
 
 def select_proton() -> dict | None:
-    protons = _list_protons()
+    protons = list_protons()
     if not protons:
         step_warn("No Proton found")
         return None
@@ -213,26 +234,32 @@ def _add_shortcut(appid: int, name: str, exe: Path, start_dir: Path, icon: Path 
     if path is None:
         return False
 
-    parsed = _parse_vdf(path.read_bytes()) if path.exists() else {"shortcuts": {}}
+    if path.exists():
+        try:
+            parsed = _parse_vdf(path.read_bytes())
+        except Exception:
+            return False
+    else:
+        parsed = {"shortcuts": {}}
     shortcuts = parsed.setdefault("shortcuts", {})
     icon_value = str(icon) if icon else ""
 
-    for idx, entry in shortcuts.items():
+    for entry in shortcuts.values():
         if entry.get("appid") == appid:
             entry["appname"] = name
-            entry["exe"] = str(exe)
-            entry["StartDir"] = str(start_dir)
+            entry["exe"] = f'"{exe}"'
+            entry["StartDir"] = f'"{start_dir}"'
             entry["icon"] = icon_value
             entry["AllowOverlay"] = 0
-            path.write_bytes(_serialize_vdf(parsed))
+            _backup_and_write(path, _serialize_vdf(parsed))
             return True
 
     new_index = str(max((int(k) for k in shortcuts.keys() if k.isdigit()), default=-1) + 1)
     shortcuts[new_index] = {
         "appid": appid,
         "appname": name,
-        "exe": str(exe),
-        "StartDir": str(start_dir),
+        "exe": f'"{exe}"',
+        "StartDir": f'"{start_dir}"',
         "icon": icon_value,
         "ShortcutPath": "",
         "LaunchOptions": "",
@@ -248,7 +275,7 @@ def _add_shortcut(appid: int, name: str, exe: Path, start_dir: Path, icon: Path 
         "sortas": "",
         "tags": {},
     }
-    path.write_bytes(_serialize_vdf(parsed))
+    _backup_and_write(path, _serialize_vdf(parsed))
     return True
 
 
@@ -256,11 +283,22 @@ def _set_compat_tool(appid: int, internal_name: str) -> bool:
     if not STEAM_CONFIG_VDF.exists():
         return False
 
-    text = STEAM_CONFIG_VDF.read_text()
+    text = STEAM_CONFIG_VDF.read_text(errors="replace")
 
     block_match = re.search(r'"CompatToolMapping"\s*\{', text)
     if not block_match:
-        return False
+        steam_match = re.search(r'"Steam"\s*\{', text, re.IGNORECASE)
+        if not steam_match:
+            return False
+        insert_at = steam_match.end()
+        text = (
+            text[:insert_at]
+            + '\n\t\t\t\t"CompatToolMapping"\n\t\t\t\t{\n\t\t\t\t}'
+            + text[insert_at:]
+        )
+        block_match = re.search(r'"CompatToolMapping"\s*\{', text)
+        if not block_match:
+            return False
     block_start = block_match.end()
     depth = 1
     pos = block_start
@@ -293,7 +331,8 @@ def _set_compat_tool(appid: int, internal_name: str) -> bool:
     else:
         new_inner = "\n" + entry + block_inner
 
-    STEAM_CONFIG_VDF.write_text(text[:block_start] + new_inner + text[block_end:])
+    new_text = text[:block_start] + new_inner + text[block_end:]
+    _backup_and_write(STEAM_CONFIG_VDF, new_text.encode("utf-8"))
     return True
 
 
@@ -316,26 +355,6 @@ def _write_grid_artwork(appid: int, logo: Path | None, hero: Path | None) -> Non
         (grid / f"{appid}.json").write_text(json.dumps(position))
     if hero and hero.exists():
         shutil.copy2(hero, grid / f"{appid}_hero{hero.suffix}")
-
-
-def _ce_installed_in_prefix(appid: int) -> bool:
-    return (STEAM_COMPATDATA / str(appid) / "pfx/drive_c/Program Files/Cheat Engine/cheatengine-x86_64.exe").exists()
-
-
-def _install_ce_in_prefix(proton: dict, appid: int) -> int:
-    env = {
-        **os.environ,
-        "STEAM_COMPAT_DATA_PATH": str(STEAM_COMPATDATA / str(appid)),
-        "STEAM_COMPAT_CLIENT_INSTALL_PATH": str(STEAM_DIR),
-    }
-    (STEAM_COMPATDATA / str(appid)).mkdir(parents=True, exist_ok=True)
-    return subprocess.run(
-        [str(proton["binary"]), "run", str(CE_INSTALLER)],
-        env=env,
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    ).returncode
 
 
 def screen_delete_prefix(downloads: list[dict]) -> None:
@@ -391,8 +410,9 @@ def screen_delete_prefix(downloads: list[dict]) -> None:
             return
 
 
-def apply_steam_setup(name: str, exe: Path, start_dir: Path, proton: dict, install_ce: bool, icon: Path | None = None, logo: Path | None = None, hero: Path | None = None) -> bool:
-    if _is_steam_running():
+def apply_steam_setup(name: str, exe: Path, start_dir: Path, proton: dict, icon: Path | None = None,
+                      logo: Path | None = None, hero: Path | None = None) -> bool:
+    if is_steam_running():
         step_warn("Close Steam to apply")
         return False
 
@@ -402,24 +422,13 @@ def apply_steam_setup(name: str, exe: Path, start_dir: Path, proton: dict, insta
 
     appid = find_existing_appid(exe) or _compute_shortcut_appid(name, str(exe))
 
-    if not _add_shortcut(appid, name, exe, start_dir, icon):
-        step_fail("Could not write shortcuts.vdf")
-        return False
     if not _set_compat_tool(appid, proton["internal"]):
         step_fail("Could not update config.vdf")
         return False
+    if not _add_shortcut(appid, name, exe, start_dir, icon):
+        step_fail("Could not write shortcuts.vdf")
+        return False
 
     _write_grid_artwork(appid, logo, hero)
-
-    if install_ce:
-        if _ce_installed_in_prefix(appid):
-            step_pass("Cheat Engine already installed")
-        else:
-            with Spinner("Installing Cheat Engine") as sp:
-                rc = _install_ce_in_prefix(proton, appid)
-                if rc != 0:
-                    sp.fail("Cheat Engine install failed — will install on first run")
-                else:
-                    sp.succeed("Cheat Engine installed")
 
     return True

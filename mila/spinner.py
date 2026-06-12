@@ -1,8 +1,17 @@
 import sys
 import threading
 import time
+from typing import Protocol
 
 from mila.style import C, step_pass, step_fail, step_warn
+
+
+class Reporter(Protocol):
+    def __enter__(self) -> "Reporter": ...
+    def __exit__(self, *exc: object) -> bool | None: ...
+    def update(self, text: str) -> None: ...
+    def succeed(self, text: str) -> None: ...
+    def fail(self, text: str) -> None: ...
 
 
 class Spinner:
@@ -19,16 +28,17 @@ class Spinner:
 
     def start(self) -> "Spinner":
         self._start_time = time.monotonic()
-        sys.stdout.write(C.HIDE_CURSOR)
-        sys.stdout.flush()
-        self._thread = threading.Thread(target=self._loop, daemon=True)
-        self._thread.start()
+        if sys.stdout.isatty():
+            sys.stdout.write(C.HIDE_CURSOR)
+            sys.stdout.flush()
+            self._thread = threading.Thread(target=self._loop, daemon=True)
+            self._thread.start()
         return self
 
     def __enter__(self) -> "Spinner":
         return self.start()
 
-    def __exit__(self, exc_type, exc_val, tb) -> None:
+    def __exit__(self, *exc: object) -> None:
         if not self._done:
             self._finish()
 
@@ -45,14 +55,20 @@ class Spinner:
         if self._done:
             return
         self._done = True
-        elapsed = time.monotonic() - self._start_time
-        if elapsed < self.MIN_DURATION:
-            time.sleep(self.MIN_DURATION - elapsed)
-        self._stop.set()
-        if self._thread:
+        if self._thread is None:
+            return
+        try:
+            elapsed = time.monotonic() - self._start_time
+            if elapsed < self.MIN_DURATION:
+                time.sleep(self.MIN_DURATION - elapsed)
+        finally:
+            self._stop.set()
             self._thread.join()
-        sys.stdout.write("\r" + C.CLEAR_LINE + C.SHOW_CURSOR)
-        sys.stdout.flush()
+            sys.stdout.write("\r" + C.CLEAR_LINE + C.SHOW_CURSOR)
+            sys.stdout.flush()
+
+    def update(self, text: str) -> None:
+        self.text = text
 
     def succeed(self, text: str | None = None) -> None:
         self._finish()
@@ -77,7 +93,7 @@ class LazySpinner:
     def __enter__(self) -> "LazySpinner":
         return self
 
-    def __exit__(self, exc_type, exc_val, tb) -> None:
+    def __exit__(self, *exc: object) -> None:
         if self._sp is not None:
             self._sp.stop()
 

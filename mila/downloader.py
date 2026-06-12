@@ -1,5 +1,6 @@
+from pathlib import Path
+
 from mila.constants import (
-    CE_INSTALLER,
     DEFAULT_MAX_DOWNLOADS,
     DEFAULT_USERNAME,
     DOWNLOADS_DIR,
@@ -8,14 +9,14 @@ from mila.constants import (
 )
 from mila.style import clear, info, line, mag, screen_header, step_fail, step_pass
 from mila.input import confirm, go_back, prompt_steam_account, select
-from mila.spinner import Spinner
+from mila.spinner import LazySpinner, Reporter
 from mila.config import get_setting
 from mila.depot import ensure_runtime, run_depots
 from mila.heatedmetal import apply_heatedmetal, hm_folder_name
 from mila.steam import apply_steam_setup, find_existing_appid, select_proton, wait_for_steam_closed
 from mila.throwback import apply_throwback, write_launch_bat
 from mila.manifest import hm_display_name, launcher_name
-from mila.unlock import cheat_engine_missing, ensure_liberator
+from mila.liberator import ensure_liberator
 
 
 def screen_downloader(cfg: dict, downloads: list[dict]) -> None:
@@ -46,6 +47,24 @@ def _header_label(download: dict, enable_hm: bool = False) -> str:
     return f"{mag(download['label'])} — {size} GB" if size else mag(download['label'])
 
 
+def apply_install(target: Path, download: dict, is_hm: bool, username: str,
+                  liberator_name: str | None = None, write_bat: bool = True,
+                  reporter: Reporter | None = None) -> bool:
+    if is_hm:
+        return apply_heatedmetal(target, username, download[HM_KEY]["hm_version"], reporter=reporter)
+    with (reporter or LazySpinner()) as sp:
+        sp.update("Copying files")
+        try:
+            apply_throwback(target, username, download["loader"])
+            if write_bat:
+                write_launch_bat(target, liberator_name)
+        except OSError as e:
+            sp.fail(f"ThrowbackLoader setup failed — {e}")
+            return False
+        sp.succeed("ThrowbackLoader applied")
+        return True
+
+
 def _run_download(cfg: dict, download: dict) -> None:
     clear()
     screen_header(_header_label(download))
@@ -64,17 +83,6 @@ def _run_download(cfg: dict, download: dict) -> None:
     enable_hm = False
     if not enable_liberator and HM_KEY in download:
         enable_hm = confirm("Enable Heated Metal?", default=True)
-
-    enable_ct = False
-    if not enable_liberator and not enable_hm and "ct" in download:
-        enable_ct = confirm("Enable Unlock-All?", default=True)
-
-    if enable_ct and not CE_INSTALLER.exists():
-        clear()
-        screen_header(_header_label(download, enable_hm))
-        cheat_engine_missing()
-        go_back()
-        return
 
     liberator_name = None
     if enable_liberator:
@@ -106,20 +114,9 @@ def _run_download(cfg: dict, download: dict) -> None:
     clear()
     screen_header(_header_label(download, enable_hm))
 
-    if enable_hm:
-        hm_block = download[HM_KEY]
-        is_manual = hm_block.get("manual", False)
-        hm_version = hm_block.get("hm_version") if not is_manual else None
-        if not apply_heatedmetal(target, username, hm_version, manual=is_manual):
-            go_back()
-            return
-        if is_manual:
-            info(f"Heated Metal mod files needed — extract Unstable build into {target}")
-    else:
-        with Spinner("Copying files") as sp:
-            apply_throwback(target, username, download["loader"])
-            write_launch_bat(target, download["ct"] if enable_ct else None, liberator_name)
-            sp.succeed("ThrowbackLoader applied")
+    if not apply_install(target, download, enable_hm, username, liberator_name):
+        go_back()
+        return
 
     added_to_steam = False
     if confirm("Add to Steam?", default=True) and wait_for_steam_closed(mag(download['label'])):
@@ -134,7 +131,7 @@ def _run_download(cfg: dict, download: dict) -> None:
             logo = MEDIA_DIR / f"{mode}_logo.png"
             icon = MEDIA_DIR / f"{mode}_icon.png"
             hero = None if enable_hm else MEDIA_DIR / "throwback_background.jpg"
-            if apply_steam_setup(name, launcher, target, proton, enable_ct, icon=icon, logo=logo, hero=hero):
+            if apply_steam_setup(name, launcher, target, proton, icon=icon, logo=logo, hero=hero):
                 added_to_steam = True
                 verb = "updated in" if existing else "added to"
                 step_pass(f"{name} was {verb} Steam")

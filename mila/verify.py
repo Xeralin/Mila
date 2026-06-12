@@ -1,13 +1,12 @@
-from mila.constants import DEFAULT_MAX_DOWNLOADS, DEFAULT_USERNAME, HM_KEY
+from mila.constants import DEFAULT_MAX_DOWNLOADS, DEFAULT_USERNAME, LAUNCH_BAT
 from mila.style import clear, line, mag, screen_header, step_fail, step_pass, step_warn
 from mila.input import go_back, prompt_steam_account, select
-from mila.spinner import Spinner
 from mila.config import get_setting
 from mila.depot import ensure_runtime, run_depots
-from mila.manifest import display_name, local_downloads, resolve_install
-from mila.heatedmetal import apply_heatedmetal
+from mila.downloader import apply_install
+from mila.manifest import display_name, installed_username, local_downloads, resolve_install
 from mila.steam import wait_for_game_closed
-from mila.throwback import apply_throwback
+from mila.throwback import write_launch_bat
 
 
 def screen_verify(cfg: dict, downloads: list[dict]) -> None:
@@ -48,7 +47,6 @@ def screen_verify(cfg: dict, downloads: list[dict]) -> None:
         return
 
     if not wait_for_game_closed(mag(download["label"])):
-        go_back()
         return
 
     max_downloads = get_setting(cfg, "max_downloads", DEFAULT_MAX_DOWNLOADS)
@@ -64,18 +62,12 @@ def screen_verify(cfg: dict, downloads: list[dict]) -> None:
     clear()
     screen_header(mag(download["label"]))
 
-    username = get_setting(cfg, "username", DEFAULT_USERNAME)
-    if is_hm:
-        hm_block = download[HM_KEY]
-        is_manual = hm_block.get("manual", False)
-        hm_version = hm_block.get("hm_version") if not is_manual else None
-        if not apply_heatedmetal(target, username, hm_version, manual=is_manual):
-            go_back()
-            return
-    else:
-        with Spinner("Copying files") as sp:
-            apply_throwback(target, username, download["loader"])
-            sp.succeed("ThrowbackLoader applied")
+    username = installed_username(target) or get_setting(cfg, "username", DEFAULT_USERNAME)
+    if not apply_install(target, download, is_hm, username, write_bat=False):
+        go_back()
+        return
+    if not is_hm and not (target / LAUNCH_BAT).exists():
+        write_launch_bat(target)
 
     step_pass(f"{download['label']} verified")
     go_back()

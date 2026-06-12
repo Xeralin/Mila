@@ -1,4 +1,6 @@
 import os
+import re
+import shutil
 import sys
 import termios
 import tty
@@ -7,10 +9,63 @@ from select import select as _readable
 
 from mila.config import get_setting, save_config, set_setting
 from mila.constants import NAME_PATTERN
-from mila.style import C, clear, heading, step_fail
+from mila.style import C, clear, cursor_up, heading, step_fail
+
+_ANSI_SEQ = re.compile(r"\033\[[0-9;?]*[A-Za-z]")
+_ARROWS = {"A": "up", "B": "down", "C": "right", "D": "left"}
+_ESC_TIMEOUT = 0.05
+_SEQ_TIMEOUT = 0.2
+_SEQ_MAX = 16
 
 
-def _read_key() -> str:
+def _next_byte(fd: int, timeout: float) -> str | None:
+    if not _readable([fd], [], [], timeout)[0]:
+        return None
+    data = os.read(fd, 1)
+    if not data:
+        return None
+    return data.decode(errors="ignore")
+
+
+def _read_escape(fd: int) -> str | None:
+    first = _next_byte(fd, _ESC_TIMEOUT)
+    if first is None:
+        return "left"
+    if first == "O":
+        final = _next_byte(fd, _SEQ_TIMEOUT)
+        return _ARROWS.get(final or "")
+    if first != "[":
+        return None
+    for _ in range(_SEQ_MAX):
+        b = _next_byte(fd, _SEQ_TIMEOUT)
+        if not b:
+            return None
+        if b == "~":
+            return None
+        if b.isascii() and b.isalpha():
+            return _ARROWS.get(b)
+    return None
+
+
+def _read_key() -> str | None:
+    if not sys.stdin.isatty():
+        try:
+            entered = input().strip().lower()
+        except EOFError:
+            return "ctrl-c"
+        match entered:
+            case "":
+                return "enter"
+            case "w":
+                return "up"
+            case "a":
+                return "left"
+            case "s":
+                return "down"
+            case "d":
+                return "right"
+            case _:
+                return entered
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
     try:
@@ -18,22 +73,21 @@ def _read_key() -> str:
         ch = os.read(fd, 1).decode(errors="ignore")
         match ch:
             case "\x1b":
-                if not _readable([fd], [], [], 0.05)[0]:
-                    return "left"
-                seq = os.read(fd, 2).decode(errors="ignore")
-                match seq:
-                    case "[A" | "OA": return "up"
-                    case "[B" | "OB": return "down"
-                    case "[C" | "OC": return "right"
-                    case "[D" | "OD": return "left"
-                    case _:           return "left"
-            case "\r" | "\n": return "enter"
-            case "\x03":      return "ctrl-c"
-            case "w":         return "up"
-            case "a":         return "left"
-            case "s":         return "down"
-            case "d":         return "right"
-            case _:           return ch
+                return _read_escape(fd)
+            case "\r" | "\n":
+                return "enter"
+            case "\x03":
+                return "ctrl-c"
+            case "w":
+                return "up"
+            case "a":
+                return "left"
+            case "s":
+                return "down"
+            case "d":
+                return "right"
+            case _:
+                return ch
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
@@ -84,9 +138,30 @@ def confirm(prompt: str, default: bool = True) -> bool:
         except EOFError:
             return default
         match answer:
-            case "":             return default
-            case "y" | "yes":    return True
-            case "n" | "no":     return False
+            case "":
+                return default
+            case "y" | "yes":
+                return True
+            case "n" | "no":
+                return False
+
+
+def _fit(text: str, limit: int) -> str:
+    if limit < 4 or len(_ANSI_SEQ.sub("", text)) <= limit:
+        return text
+    out: list[str] = []
+    visible = 0
+    i = 0
+    while visible < limit - 1:
+        m = _ANSI_SEQ.match(text, i)
+        if m:
+            out.append(m.group())
+            i = m.end()
+        else:
+            out.append(text[i])
+            visible += 1
+            i += 1
+    return "".join(out) + "…" + C.R
 
 
 def select(title: str, options: list[str], current: int = 0, clear_first: bool = True,
@@ -114,8 +189,9 @@ def select(title: str, options: list[str], current: int = 0, clear_first: bool =
     def render() -> None:
         nonlocal rendered, window_start
         if rendered:
-            sys.stdout.write(f"\033[{rendered}A")
+            sys.stdout.write(cursor_up(rendered))
         sys.stdout.write(C.CLEAR_DOWN)
+        limit = shutil.get_terminal_size().columns - 1
         prompt = title or "What would you like to do?"
         if n <= SCROLL_SIZE:
             window_start = 0
@@ -145,7 +221,7 @@ def select(title: str, options: list[str], current: int = 0, clear_first: bool =
                 out.append(f"{left}  {C.CYN}▸{C.R} {C.UNDER}{opt}{C.UNDER_OFF}")
             else:
                 out.append(f"{left}    {opt}")
-        sys.stdout.write("\n".join(out) + "\n")
+        sys.stdout.write("\n".join(_fit(row, limit) for row in out) + "\n")
         sys.stdout.flush()
         rendered = len(out)
 

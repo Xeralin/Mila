@@ -76,7 +76,7 @@ class Presence:
                 if op == OP_FRAME:
                     return True
                 self.close()
-            except (OSError, ConnectionError):
+            except OSError:
                 continue
         return False
 
@@ -124,7 +124,7 @@ class Presence:
                 "nonce": nonce,
             })
             return self._await_response(nonce)
-        except (OSError, ConnectionError):
+        except OSError:
             self.close()
             return False
 
@@ -142,14 +142,14 @@ class Presence:
                 op, payload = self._recv()
                 if op == OP_PING:
                     self._send(OP_PONG, payload)
-        except (OSError, ConnectionError):
+        except OSError:
             self.close()
 
     def close(self) -> None:
         if self.sock:
             try:
                 self._send(OP_CLOSE, {})
-            except (OSError, ConnectionError):
+            except OSError:
                 pass
             try:
                 self.sock.close()
@@ -159,15 +159,18 @@ class Presence:
 
 
 def _find_game_folder() -> str | None:
-    out = subprocess.run(
-        ["pgrep", "-f", r"RainbowSix.*\.exe"],
-        capture_output=True, text=True, check=False,
-    )
+    try:
+        out = subprocess.run(
+            ["pgrep", "-f", r"RainbowSix.*\.exe"],
+            capture_output=True, text=True, check=False,
+        )
+    except FileNotFoundError:
+        return None
     downloads_root = DOWNLOADS_DIR.resolve()
     for pid in out.stdout.split():
         try:
             cwd = Path(f"/proc/{pid}/cwd").resolve()
-        except (FileNotFoundError, PermissionError, OSError):
+        except OSError:
             continue
         try:
             rel = cwd.relative_to(downloads_root)
@@ -262,15 +265,33 @@ def start_daemon() -> None:
     )
 
 
+def _is_mila_daemon(pid: int) -> bool:
+    try:
+        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return False
+    parts = [p.decode(errors="replace") for p in cmdline.split(b"\0") if p]
+    return (any("python" in p for p in parts)
+            and any("mila" in p for p in parts))
+
+
 def stop_daemon() -> None:
+    if not is_daemon_running():
+        RPC_LOCK_FILE.unlink(missing_ok=True)
+        return
     try:
         pid = int(RPC_LOCK_FILE.read_text().strip())
-    except (FileNotFoundError, ValueError):
+    except (OSError, ValueError):
+        return
+    if not _is_mila_daemon(pid):
         return
     try:
         os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
+    except (ProcessLookupError, PermissionError):
+        return
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline and is_daemon_running():
+        time.sleep(0.05)
 
 
 def main() -> int:

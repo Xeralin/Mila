@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import subprocess
 import tarfile
@@ -25,10 +26,22 @@ from mila.constants import (
 )
 from mila.depot import fetch_to, github_asset
 from mila.input import go_back, select
-from mila.manifest import display_name, installed_downloads, resolve_install
-from mila.spinner import LazySpinner
+from mila.manifest import display_name, installed_downloads, installed_username, resolve_install
+from mila.spinner import LazySpinner, Reporter
 from mila.steam import wait_for_game_closed
 from mila.style import clear, mag, screen_header, step_fail, step_pass, step_warn
+
+_last_error: str = ""
+_release_cache: dict[str, tuple[str, str]] = {}
+
+
+def _set_error(detail: str) -> None:
+    global _last_error
+    _last_error = detail
+
+
+def _fail_message(fail_text: str) -> str:
+    return f"{fail_text} — {_last_error}" if _last_error else fail_text
 
 
 def _default_args(mod_dir: Path) -> Path | None:
@@ -46,20 +59,24 @@ def ensure_7zz(update: Callable[[str], None], force: bool = False) -> Path | Non
     update("Fetching 7zz")
     BIN_DIR.mkdir(parents=True, exist_ok=True)
     tarxz_path = BIN_DIR / "_7zz.tar.xz"
+    tmp_dir = BIN_DIR / ".7zz.tmp"
     try:
         _, asset_url = github_asset(SEVENZ_API_URL, "linux-x64.tar.xz")
         fetch_to(asset_url, tarxz_path)
         with tarfile.open(tarxz_path) as t:
-            t.extract("7zz", BIN_DIR)
-    except Exception:
-        tarxz_path.unlink(missing_ok=True)
-        return None
-
-    tarxz_path.unlink(missing_ok=True)
-    if SEVENZ_BIN.exists():
-        SEVENZ_BIN.chmod(SEVENZ_BIN.stat().st_mode | 0o111)
+            if hasattr(tarfile, "data_filter"):
+                t.extraction_filter = tarfile.data_filter
+            t.extract("7zz", tmp_dir)
+        tmp_bin = tmp_dir / "7zz"
+        tmp_bin.chmod(tmp_bin.stat().st_mode | 0o111)
+        os.replace(tmp_bin, SEVENZ_BIN)
         return SEVENZ_BIN
-    return None
+    except Exception as e:
+        _set_error(f"7zz download failed: {e}")
+        return None
+    finally:
+        tarxz_path.unlink(missing_ok=True)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def ensure_helios(update: Callable[[str], None]) -> bool:
@@ -67,29 +84,50 @@ def ensure_helios(update: Callable[[str], None]) -> bool:
         return True
 
     update("Fetching HeliosLoader")
-    HELIOS_DIR.mkdir(parents=True, exist_ok=True)
+    tmp_dir = HELIOS_DIR.with_name(HELIOS_DIR.name + ".tmp")
     zip_path = HM_BIN_DIR / "_helios.zip"
     try:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        tmp_dir.mkdir(parents=True)
         fetch_to(JVAV_HELIOS_URL, zip_path)
         with zipfile.ZipFile(zip_path) as z:
             for name in HELIOS_FILES:
                 with z.open(f"HeliosLoader/{name}") as f:
-                    (HELIOS_DIR / name).write_bytes(f.read())
-    except Exception:
-        zip_path.unlink(missing_ok=True)
+                    (tmp_dir / name).write_bytes(f.read())
+        if HELIOS_DIR.exists():
+            shutil.rmtree(HELIOS_DIR)
+        os.replace(tmp_dir, HELIOS_DIR)
+        return True
+    except Exception as e:
+        _set_error(f"HeliosLoader download failed: {e}")
         return False
-
-    zip_path.unlink(missing_ok=True)
-    return all((HELIOS_DIR / f).exists() for f in HELIOS_FILES)
+    finally:
+        zip_path.unlink(missing_ok=True)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def resolve_hm_release(hm_version: str) -> tuple[str, str] | None:
     if hm_version != "latest":
         return hm_version, HM_RELEASE_URL_FMT.format(tag=hm_version)
+    cached = _release_cache.get(HM_API_URL)
+    if cached is not None:
+        return cached
     try:
-        return github_asset(HM_API_URL, ".7z")
-    except Exception:
+        resolved = github_asset(HM_API_URL, ".7z")
+    except Exception as e:
+        _set_error(f"Heated Metal release lookup failed: {e}")
         return None
+    _release_cache[HM_API_URL] = resolved
+    return resolved
+
+
+def _sevenz_error(rc: subprocess.CompletedProcess) -> str:
+    stderr_line = next(
+        (line.strip() for line in rc.stderr.decode(errors="replace").splitlines() if line.strip()),
+        "",
+    )
+    detail = f"7z exited with code {rc.returncode}"
+    return f"{detail}: {stderr_line}" if stderr_line else detail
 
 
 def ensure_heatedmetal_mod(hm_version: str, update: Callable[[str], None]) -> Path | None:
@@ -109,23 +147,32 @@ def ensure_heatedmetal_mod(hm_version: str, update: Callable[[str], None]) -> Pa
         return None
 
     update(f"Fetching Heated Metal {tag}")
-    mod_dir.mkdir(parents=True, exist_ok=True)
-    archive_path = mod_dir / "_heatedmetal.7z"
+    tmp_dir = HM_MOD_DIR / f".{tag}.tmp"
+    archive_path = tmp_dir / "_heatedmetal.7z"
     try:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        tmp_dir.mkdir(parents=True)
         fetch_to(asset_url, archive_path)
         rc = subprocess.run(
-            [str(sevenz), "x", "-y", f"-o{mod_dir}", str(archive_path)],
+            [str(sevenz), "x", "-y", f"-o{tmp_dir}", str(archive_path)],
             capture_output=True, check=False,
         )
         if rc.returncode != 0:
-            archive_path.unlink(missing_ok=True)
+            _set_error(_sevenz_error(rc))
             return None
-    except Exception:
-        archive_path.unlink(missing_ok=True)
+        archive_path.unlink()
+        if _default_args(tmp_dir) is None:
+            _set_error(f"DefaultArgs.dll missing in Heated Metal {tag} archive")
+            return None
+        if mod_dir.exists():
+            shutil.rmtree(mod_dir)
+        os.replace(tmp_dir, mod_dir)
+        return mod_dir
+    except Exception as e:
+        _set_error(f"Heated Metal download failed: {e}")
         return None
-
-    archive_path.unlink(missing_ok=True)
-    return mod_dir if _default_args(mod_dir) else None
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def _detect_cpu_variant() -> str:
@@ -160,28 +207,19 @@ def _install_helios(target_dir: Path, username: str) -> None:
         shutil.rmtree(target_hm)
 
 
-def apply_heatedmetal(target_dir: Path, username: str, hm_version: str | None = None,
+def apply_heatedmetal(target_dir: Path, username: str, hm_version: str,
                       success_text: str = "Heated Metal applied",
                       fail_text: str = "Heated Metal setup failed",
-                      manual: bool = False) -> bool:
-    with LazySpinner() as sp:
+                      reporter: Reporter | None = None) -> bool:
+    _set_error("")
+    with (reporter or LazySpinner()) as sp:
         if not ensure_helios(sp.update):
-            sp.fail(fail_text)
-            return False
-
-        if manual:
-            sp.update("Copying files")
-            _install_helios(target_dir, username)
-            sp.succeed("HeliosLoader applied")
-            return True
-
-        if hm_version is None:
-            sp.fail(fail_text)
+            sp.fail(_fail_message(fail_text))
             return False
 
         mod_dir = ensure_heatedmetal_mod(hm_version, sp.update)
         if mod_dir is None:
-            sp.fail(fail_text)
+            sp.fail(_fail_message(fail_text))
             return False
 
         sp.update("Copying files")
@@ -217,18 +255,64 @@ def current_hm_version(target: Path) -> str:
 
 
 def hm_update_available(downloads: list[dict]) -> bool:
+    return bool(hm_pending_updates(downloads))
+
+
+def hm_pending_updates(downloads: list[dict]) -> list[dict]:
+    pending = []
     for target in installed_downloads():
         resolved = resolve_install(target.name, downloads)
         if resolved is None or not resolved[1]:
             continue
         download = resolved[0]
-        if download[HM_KEY].get("manual"):
-            continue
         release = resolve_hm_release(download[HM_KEY]["hm_version"])
         if release is None:
             continue
-        if current_hm_version(target) != release[0]:
-            return True
+        current = current_hm_version(target)
+        if current != release[0]:
+            pending.append({
+                "key": download["key"],
+                "name": display_name(target.name, downloads),
+                "current": current,
+                "target": release[0],
+            })
+    return pending
+
+
+def _prune_mod_cache(downloads: list[dict], keep_tag: str) -> None:
+    if not HM_MOD_DIR.exists():
+        return
+    referenced = {keep_tag}
+    for target in installed_downloads():
+        resolved = resolve_install(target.name, downloads)
+        if resolved is None or not resolved[1]:
+            continue
+        referenced.add(current_hm_version(target))
+    for entry in HM_MOD_DIR.iterdir():
+        if entry.is_dir() and entry.name not in referenced:
+            shutil.rmtree(entry, ignore_errors=True)
+
+
+def update_hm(download_key: str, downloads: list[dict], username: str,
+              reporter: Reporter | None = None) -> bool:
+    for target in installed_downloads():
+        resolved = resolve_install(target.name, downloads)
+        if resolved is None or not resolved[1] or resolved[0]["key"] != download_key:
+            continue
+        release = resolve_hm_release(resolved[0][HM_KEY]["hm_version"])
+        if release is None:
+            return False
+        shutil.rmtree(HELIOS_DIR, ignore_errors=True)
+        effective_username = installed_username(target) or username
+        ok = apply_heatedmetal(
+            target, effective_username, release[0],
+            success_text=f"{resolved[0]['label']} updated to {release[0]}",
+            fail_text="Heated Metal update failed",
+            reporter=reporter,
+        )
+        if ok:
+            _prune_mod_cache(downloads, release[0])
+        return ok
     return False
 
 
@@ -252,8 +336,7 @@ def screen_update_heatedmetal(cfg: dict, downloads: list[dict]) -> None:
     while True:
         labels = []
         for target, download in hm_downloads:
-            version_str = "manual" if download[HM_KEY].get("manual") else current_hm_version(target)
-            labels.append(f"{display_name(target.name, downloads):<20}{version_str:>8}")
+            labels.append(f"{display_name(target.name, downloads):<20}{current_hm_version(target):>8}")
         labels.append("Back")
         pick = select("Update Heated Metal", labels)
         if pick is None or pick == len(labels) - 1:
@@ -263,11 +346,6 @@ def screen_update_heatedmetal(cfg: dict, downloads: list[dict]) -> None:
         name = display_name(target.name, downloads)
         clear()
         screen_header(mag(name))
-
-        if download[HM_KEY].get("manual"):
-            step_warn("Manual install — get a new version from Discord")
-            go_back()
-            continue
 
         resolved = resolve_hm_release(download[HM_KEY]["hm_version"])
         if resolved is None:
@@ -285,10 +363,11 @@ def screen_update_heatedmetal(cfg: dict, downloads: list[dict]) -> None:
             continue
 
         shutil.rmtree(HELIOS_DIR, ignore_errors=True)
-        username = get_setting(cfg, "username", DEFAULT_USERNAME)
-        apply_heatedmetal(
+        username = installed_username(target) or get_setting(cfg, "username", DEFAULT_USERNAME)
+        if apply_heatedmetal(
             target, username, target_tag,
             success_text=f"{name} updated to {target_tag}",
             fail_text=f"{name} update failed",
-        )
+        ):
+            _prune_mod_cache(downloads, target_tag)
         go_back()

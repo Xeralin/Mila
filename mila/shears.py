@@ -71,10 +71,11 @@ def _delete_videos(path: Path) -> int:
         if not f.is_file():
             continue
         try:
-            freed += f.stat().st_size
+            size = f.stat().st_size
             f.unlink()
         except OSError:
-            pass
+            continue
+        freed += size
     return freed
 
 
@@ -82,10 +83,11 @@ def _delete_events(path: Path) -> int:
     freed = 0
     for f in _event_files(path):
         try:
-            freed += f.stat().st_size
+            size = f.stat().st_size
             f.unlink()
         except OSError:
-            pass
+            continue
+        freed += size
     return freed
 
 
@@ -105,13 +107,21 @@ def _uses_upc_loader(d: Path) -> bool:
     return any((d / dll).exists() for dll in UPC_LOADERS)
 
 
-def _scan_download(d: Path) -> dict:
+def scan_download(d: Path) -> dict:
     return {
         "total":  _folder_size(d),
         "tiers":  _texture_tiers(d),
         "videos": _videos_size(d),
         "events": 0 if _uses_upc_loader(d) else _events_size(d),
     }
+
+
+def cut_download(d: Path, kind: str, level: int = 0) -> int:
+    if kind == "videos":
+        return _delete_videos(d)
+    if kind == "events":
+        return _delete_events(d)
+    return _delete_textures_above(d, level)
 
 
 def _shears_action(download_dir: Path, kind: str, level: int = 0) -> None:
@@ -136,12 +146,7 @@ def _shears_action(download_dir: Path, kind: str, level: int = 0) -> None:
     clear()
     screen_header(titles[kind])
     with Spinner("Cutting") as sp:
-        if kind == "videos":
-            freed = _delete_videos(download_dir)
-        elif kind == "events":
-            freed = _delete_events(download_dir)
-        else:
-            freed = _delete_textures_above(download_dir, level)
+        freed = cut_download(download_dir, kind, level)
         sp.succeed(f"Freed {fmt_bytes(freed)}")
     go_back()
 
@@ -152,7 +157,7 @@ def _shears_download(download_dir: Path, infos: dict[Path, dict], downloads: lis
         clear()
         if download_dir not in infos:
             with Spinner(f"Scanning {name}"):
-                infos[download_dir] = _scan_download(download_dir)
+                infos[download_dir] = scan_download(download_dir)
         info = infos[download_dir]
         total, tiers, videos, events = info["total"], info["tiers"], info["videos"], info["events"]
 
@@ -206,7 +211,7 @@ def screen_shears(downloads: list[dict]) -> None:
     with Spinner(f"Scanning {display_name(present[0].name, downloads)}") as sp:
         for d in present:
             sp.text = f"Scanning {display_name(d.name, downloads)}"
-            infos[d] = _scan_download(d)
+            infos[d] = scan_download(d)
 
     while True:
         labels = [f"{display_name(d.name, downloads):<20}{fmt_bytes(infos[d]['total']):>8}" for d in present]

@@ -15,16 +15,11 @@ def _help_entries(cfg: dict) -> list[tuple[str, str, tuple[str, Callable[[], Non
             None,
         ),
         (
-            "Enable Unlock-All",
-            f"1.  Download the {cyn('Windows')} version from {cyn('cheatengine.org')}, move to {orn('bin/')} and rename to {orn('CheatEngine.exe')}\n"
-            f"2.  Confirm {mag('Enable Unlock-All?')} at the download prompt\n"
-            f"3.  Click through the {cyn('Cheat Engine')} installer when it opens — deny any bundled offers to avoid adware\n"
-            f"4.  First run: tick {mag('Always')} on the Lua script prompt, click {mag('Yes')}, then restart the game once\n"
-            f"5.  For Y7S4 and Y7S2, also add the stealthedit plugin in {cyn('Cheat Engine')}:\n"
-            f"    Edit {ARROW} Settings {ARROW} Plugins {ARROW} Add New\n"
-            f"    {orn('/')} drive {ARROW} {orn('home/<user>/.../Mila/plugins/stealthedit/umstealthedit-x86_64.dll')}\n"
-            f"    Tick its checkbox, then click {mag('OK')}\n"
-            f"6.  The cheat enables ~7 seconds after {cyn('Cheat Engine')} attaches to the game",
+            "Enable Liberator",
+            f"1.  Confirm {mag('Enable Liberator?')} at the download prompt\n"
+            f"    — Mila fetches {cyn('Liberator')} automatically\n"
+            f"2.  Already downloaded? Toggle {mag('Liberator')} in {mag('Settings')}\n"
+            f"3.  The unlock enables a few seconds after the game launches",
             None,
         ),
         (
@@ -32,7 +27,8 @@ def _help_entries(cfg: dict) -> list[tuple[str, str, tuple[str, Callable[[], Non
             f"1. Use {cyn('VirtualBox')} to create a {cyn('Windows')} VM, then install {cyn('RadminVPN')} on it\n"
             f"2. Tools {ARROW} RadminVPN {ARROW} Create bridge {ARROW} enter your Radmin IP\n"
             f"3. Shut down the VM, then Tools {ARROW} RadminVPN {ARROW} Attach VM to bridge\n"
-            f"4. Start the VM. In {cyn('Windows')}, open {orn('ncpa.cpl')}, select {mag('Ethernet 2')} and {mag('Radmin VPN')}\n"
+            f"4. Start the VM. In {cyn('Windows')}, open {orn('ncpa.cpl')},\n"
+            f"   select {mag('Ethernet 2')} and {mag('Radmin VPN')}\n"
             f"   {ARROW} right-click {ARROW} Bridge Connections\n"
             f"5. The bridge does not survive a {cyn('Linux')} reboot. Go to\n"
             f"   Tools {ARROW} RadminVPN {ARROW} Create bridge\n"

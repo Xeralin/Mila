@@ -1,5 +1,4 @@
 import json
-import re
 import shutil
 from pathlib import Path
 
@@ -24,33 +23,43 @@ from mila.input import ask, confirm, go_back, select
 from mila.spinner import Spinner
 from mila.config import get_setting, save_config, set_setting
 from mila.throwback import write_throwback_toml
-from mila.manifest import display_name, installed_downloads
+from mila.manifest import display_name, installed_downloads, installed_username
 from mila.rpc import is_discord_installed, start_daemon, stop_daemon
-from mila.unlock import screen_unlock
+from mila.liberator import screen_liberator
 
 
-def _read_download_username(d: Path) -> str:
-    toml_path = d / THROWBACK_TOML
-    if toml_path.exists():
-        m = re.search(r"username\s*=\s*'([^']*)'", toml_path.read_text())
-        if m:
-            return m.group(1)
+def _depot_token_stores(iso_dir: Path) -> list[Path]:
+    return sorted({p.parent.parent for p in iso_dir.rglob("AssemFiles/account.config")})
+
+
+def wipe_depot_token() -> tuple[bool, list[str]]:
+    iso_dir = Path.home() / ".local" / "share" / "IsolatedStorage"
+    stores = _depot_token_stores(iso_dir) if iso_dir.exists() else []
+    if not stores:
+        return False, []
+    errors = []
+    for store in stores:
+        try:
+            shutil.rmtree(store)
+        except OSError as e:
+            errors.append(f"Could not remove {store} — {e}")
+    return True, errors
+
+
+def write_download_username(d: Path, username: str) -> bool:
+    if (d / THROWBACK_TOML).exists():
+        write_throwback_toml(d, username)
+        return True
     json_path = d / HELIOS_JSON
     if json_path.exists():
         try:
-            return json.loads(json_path.read_text()).get("Username", "")
+            config = json.loads(json_path.read_text())
         except (json.JSONDecodeError, OSError):
-            pass
-    return ""
-
-
-def _write_download_username(d: Path, username: str) -> None:
-    if (d / THROWBACK_TOML).exists():
-        write_throwback_toml(d, username)
-    elif (d / HELIOS_JSON).exists():
-        config = json.loads((d / HELIOS_JSON).read_text())
+            return False
         config["Username"] = username
-        (d / HELIOS_JSON).write_text(json.dumps(config, indent=2))
+        json_path.write_text(json.dumps(config, indent=2))
+        return True
+    return False
 
 
 def _prompt_new_username(current: str) -> str | None:
@@ -83,23 +92,37 @@ def _change_username_default(cfg: dict, installs: list[Path], downloads: list[di
     for d in installs:
         name = display_name(d.name, downloads)
         with Spinner(f"Updating {name}") as sp:
-            _write_download_username(d, new)
-            sp.succeed(name)
+            try:
+                ok = write_download_username(d, new)
+            except OSError as e:
+                sp.fail(f"{name} — {e}")
+                continue
+            if ok:
+                sp.succeed(name)
+            else:
+                sp.fail(f"{name} — username file is missing or corrupt")
     go_back()
 
 
 def _change_username_one(d: Path, downloads: list[dict]) -> None:
     name = display_name(d.name, downloads)
     screen_header(f"Change username — {mag(name)}")
-    current = _read_download_username(d)
+    current = installed_username(d)
     new = _prompt_new_username(current)
     if new is None:
         return
     clear()
     screen_header(f"Change username — {mag(name)}")
     with Spinner(f"Updating {name}") as sp:
-        _write_download_username(d, new)
-        sp.succeed(f"Saved: {new}")
+        try:
+            ok = write_download_username(d, new)
+        except OSError as e:
+            sp.fail(f"Update failed — {e}")
+        else:
+            if ok:
+                sp.succeed(f"Saved: {new}")
+            else:
+                sp.fail("Username file is missing or corrupt")
     go_back()
 
 
@@ -108,7 +131,7 @@ def screen_change_username(cfg: dict, downloads: list[dict]) -> None:
         installs = installed_downloads()
         current_default = get_setting(cfg, "username", DEFAULT_USERNAME)
         labels = [f"{'Default':<20}{current_default:>8}"]
-        labels += [f"{display_name(d.name, downloads):<20}{_read_download_username(d):>8}" for d in installs]
+        labels += [f"{display_name(d.name, downloads):<20}{installed_username(d):>8}" for d in installs]
         labels.append("Back")
         pick = select("Change username", labels)
         if pick is None or pick == len(labels) - 1:
@@ -131,10 +154,15 @@ def screen_logout(cfg: dict) -> None:
     screen_header("Log out")
     cfg.get("settings", {}).pop("steam_account", None)
     save_config(cfg)
-    iso_dir = Path.home() / ".local" / "share" / "IsolatedStorage"
-    if iso_dir.exists():
-        shutil.rmtree(iso_dir, ignore_errors=True)
-    step_pass("Logged out")
+    found, errors = wipe_depot_token()
+    if not found:
+        step_warn("No DepotDownloader token found — nothing to remove")
+        go_back()
+        return
+    for err in errors:
+        step_fail(err)
+    if not errors:
+        step_pass("Logged out")
     go_back()
 
 
@@ -199,7 +227,7 @@ def screen_settings(cfg: dict, downloads: list[dict]) -> None:
     while True:
         actions = [
             ("Change username",      lambda: screen_change_username(cfg, downloads)),
-            ("Toggle Unlock-All",    lambda: screen_unlock(downloads)),
+            ("Toggle Liberator",     lambda: screen_liberator(downloads)),
             (_rpc_label(cfg),        lambda: _toggle_discord_rpc(cfg)),
             ("Clear download cache", screen_clear_cache),
             ("Set download speed",   lambda: screen_set_download_speed(cfg)),

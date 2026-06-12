@@ -14,36 +14,48 @@ def _has_command(name: str) -> bool:
 
 
 def detect_radmin_bridge() -> str | None:
-    out = subprocess.run(
-        ["ip", "-o", "-4", "addr", "show", VBOX_IFACE],
-        capture_output=True, text=True, check=False,
-    )
+    try:
+        out = subprocess.run(
+            ["ip", "-o", "-4", "addr", "show", VBOX_IFACE],
+            capture_output=True, text=True, check=False,
+        )
+    except FileNotFoundError:
+        return None
     if out.returncode != 0:
         return None
     m = re.search(r"inet (26\.\d+\.\d+\.\d+)", out.stdout)
     return m.group(1) if m else None
 
 
-def _bridge_iface_present() -> bool:
-    out = subprocess.run([VBOX_CMD, "list", "hostonlyifs"],
-                         capture_output=True, text=True, check=False)
+def bridge_present() -> bool:
+    try:
+        out = subprocess.run([VBOX_CMD, "list", "hostonlyifs"],
+                             capture_output=True, text=True, check=False)
+    except FileNotFoundError:
+        return False
     return bool(re.search(rf"\b{VBOX_IFACE}\b", out.stdout))
 
 
-def _competing_radmin_route() -> str | None:
-    out = subprocess.run(
-        ["ip", "-o", "route", "show"],
-        capture_output=True, text=True, check=False,
-    )
-    for line in out.stdout.splitlines():
-        m = re.match(r"^26\.\S+\s+.*\bdev\s+(\S+)", line)
+def competing_route() -> str | None:
+    try:
+        out = subprocess.run(
+            ["ip", "-o", "route", "show"],
+            capture_output=True, text=True, check=False,
+        )
+    except FileNotFoundError:
+        return None
+    for route in out.stdout.splitlines():
+        m = re.match(r"^26\.\S+\s+.*\bdev\s+(\S+)", route)
         if m and m.group(1) != VBOX_IFACE:
             return m.group(1)
     return None
 
 
 def _run_quiet(cmd: list[str], ok_if: tuple[str, ...] = ()) -> tuple[str | None, bool]:
-    out = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except FileNotFoundError:
+        return f"{cmd[0]}: command not found", False
     if out.returncode == 0:
         return None, False
     err = (out.stderr or out.stdout).strip()
@@ -63,18 +75,83 @@ def _run_steps(steps: list[tuple[list[str], tuple[str, ...]]]) -> tuple[str | No
     return None, changed
 
 
-def _verify_bridge(radmin_ip: str) -> bool:
-    addr_out = subprocess.run(
-        ["ip", "-o", "-4", "addr", "show", "dev", VBOX_IFACE],
-        capture_output=True, text=True, check=False,
-    ).stdout
-    if f"inet {radmin_ip}/8" not in addr_out:
+def verify_bridge(radmin_ip: str) -> bool:
+    try:
+        addr_out = subprocess.run(
+            ["ip", "-o", "-4", "addr", "show", "dev", VBOX_IFACE],
+            capture_output=True, text=True, check=False,
+        ).stdout
+        if f"inet {radmin_ip}/8" not in addr_out:
+            return False
+        route_out = subprocess.run(
+            ["ip", "route", "show", "dev", VBOX_IFACE],
+            capture_output=True, text=True, check=False,
+        ).stdout
+    except FileNotFoundError:
         return False
-    route_out = subprocess.run(
-        ["ip", "route", "show", "dev", VBOX_IFACE],
-        capture_output=True, text=True, check=False,
-    ).stdout
     return "224.0.0.0/4" in route_out and "26.255.255.255" in route_out
+
+
+def create_bridge(radmin_ip: str, elevate: list[str]) -> tuple[str | None, bool, bool]:
+    created = not bridge_present()
+    steps: list[tuple[list[str], tuple[str, ...]]] = [
+        ([*elevate, "modprobe", "vboxnetadp"], ()),
+        ([*elevate, "chmod", "0666", "/dev/vboxnetctl"], ()),
+    ]
+    if created:
+        steps.append(([VBOX_CMD, "hostonlyif", "create"], ()))
+    steps += [
+        ([VBOX_CMD, "hostonlyif", "ipconfig", VBOX_IFACE, "--ip", radmin_ip, "--netmask", "255.0.0.0"], ()),
+        ([*elevate, "ip", "link", "set", VBOX_IFACE, "up"], ()),
+        ([*elevate, "ip", "addr", "add", f"{radmin_ip}/8", "dev", VBOX_IFACE],
+         ("File exists", "already assigned")),
+        ([*elevate, "ip", "route", "add", "224.0.0.0/4", "dev", VBOX_IFACE],
+         ("File exists",)),
+        ([*elevate, "ip", "route", "add", "26.255.255.255/32", "dev", VBOX_IFACE],
+         ("File exists",)),
+        ([*elevate, "ip", "route", "add", "255.255.255.255/32", "dev", VBOX_IFACE],
+         ("File exists",)),
+    ]
+    error, changed = _run_steps(steps)
+    return error, changed, created
+
+
+def remove_bridge(elevate: list[str]) -> str | None:
+    error, _ = _run_steps([
+        ([*elevate, "ip", "addr", "flush", "dev", VBOX_IFACE], ()),
+        ([*elevate, "ip", "link", "set", VBOX_IFACE, "down"], ()),
+        ([VBOX_CMD, "hostonlyif", "remove", VBOX_IFACE], ()),
+    ])
+    return error
+
+
+def list_vms() -> list[str] | None:
+    out = subprocess.run([VBOX_CMD, "list", "vms"], capture_output=True, text=True, check=False)
+    if out.returncode != 0:
+        return None
+    return re.findall(r'"([^"]+)"', out.stdout)
+
+
+def vm_state(vm_name: str) -> str | None:
+    info = subprocess.run(
+        [VBOX_CMD, "showvminfo", vm_name, "--machinereadable"],
+        capture_output=True, text=True, check=False,
+    )
+    if info.returncode != 0:
+        return None
+    state_match = re.search(r'VMState="([^"]+)"', info.stdout)
+    return state_match.group(1) if state_match else "unknown"
+
+
+def attach_vm(vm_name: str) -> str | None:
+    rc = subprocess.run(
+        [VBOX_CMD, "modifyvm", vm_name, "--nic2", "hostonly", "--hostonlyadapter2", VBOX_IFACE],
+        capture_output=True, text=True, check=False,
+    )
+    if rc.returncode != 0:
+        err = (rc.stderr or rc.stdout).strip().splitlines()
+        return err[0] if err else "unknown error"
+    return None
 
 
 def _radmin_create(cfg: dict) -> None:
@@ -83,7 +160,11 @@ def _radmin_create(cfg: dict) -> None:
         step_fail("Install VirtualBox first")
         go_back()
         return
-    conflict = _competing_radmin_route()
+    if not _has_command("sudo"):
+        step_fail("Install sudo first")
+        go_back()
+        return
+    conflict = competing_route()
     if conflict:
         step_fail(f"Another interface '{conflict}' already routes 26.x — remove it first")
         line(f"Inspect with: ip link show {conflict}")
@@ -102,30 +183,10 @@ def _radmin_create(cfg: dict) -> None:
 
     subprocess.run(["sudo", "-v"], check=False)
     with Spinner("Creating bridge") as sp:
-        created = not _bridge_iface_present()
-        steps: list[tuple[list[str], tuple[str, ...]]] = [
-            (["sudo", "modprobe", "vboxnetadp"], ()),
-            (["sudo", "chmod", "0666", "/dev/vboxnetctl"], ()),
-        ]
-        if created:
-            steps.append(([VBOX_CMD, "hostonlyif", "create"], ()))
-        steps += [
-            ([VBOX_CMD, "hostonlyif", "ipconfig", VBOX_IFACE, "--ip", radmin_ip, "--netmask", "255.0.0.0"], ()),
-            (["sudo", "ip", "link", "set", VBOX_IFACE, "up"], ()),
-            (["sudo", "ip", "addr", "add", f"{radmin_ip}/8", "dev", VBOX_IFACE],
-             ("File exists", "already assigned")),
-            (["sudo", "ip", "route", "add", "224.0.0.0/4", "dev", VBOX_IFACE],
-             ("File exists",)),
-            (["sudo", "ip", "route", "add", "26.255.255.255/32", "dev", VBOX_IFACE],
-             ("File exists",)),
-            (["sudo", "ip", "route", "add", "255.255.255.255/32", "dev", VBOX_IFACE],
-             ("File exists",)),
-        ]
-
-        error, changed = _run_steps(steps)
+        error, changed, created = create_bridge(radmin_ip, ["sudo"])
         if error:
             sp.fail(f"Bridge setup failed — {error}")
-        elif not _verify_bridge(radmin_ip):
+        elif not verify_bridge(radmin_ip):
             sp.fail("Bridge verification failed")
         elif changed or created:
             sp.succeed("Bridge created")
@@ -140,17 +201,16 @@ def _radmin_attach_vm() -> None:
         step_fail("Install VirtualBox first")
         go_back()
         return
-    if not _bridge_iface_present():
+    if not bridge_present():
         step_fail("Bridge not set up — run 'Create bridge' first")
         go_back()
         return
 
-    out = subprocess.run([VBOX_CMD, "list", "vms"], capture_output=True, text=True, check=False)
-    if out.returncode != 0:
+    vms = list_vms()
+    if vms is None:
         step_fail("Could not list VirtualBox VMs")
         go_back()
         return
-    vms = re.findall(r'"([^"]+)"', out.stdout)
     if not vms:
         step_warn("No VirtualBox VMs found — create one first")
         go_back()
@@ -165,29 +225,20 @@ def _radmin_attach_vm() -> None:
     clear()
     screen_header("Attach VM to bridge")
 
-    info = subprocess.run(
-        [VBOX_CMD, "showvminfo", vm_name, "--machinereadable"],
-        capture_output=True, text=True, check=False,
-    )
-    if info.returncode != 0:
+    state = vm_state(vm_name)
+    if state is None:
         step_fail(f"Could not read state of VM '{vm_name}'")
         go_back()
         return
-    state_match = re.search(r'VMState="([^"]+)"', info.stdout)
-    state = state_match.group(1) if state_match else "unknown"
     if state not in ("poweroff", "aborted"):
         step_fail(f"VM '{vm_name}' state is {state} — power it off first")
         go_back()
         return
 
     with Spinner("Configuring adapter") as sp:
-        rc = subprocess.run(
-            [VBOX_CMD, "modifyvm", vm_name, "--nic2", "hostonly", "--hostonlyadapter2", VBOX_IFACE],
-            capture_output=True, text=True, check=False,
-        )
-        if rc.returncode != 0:
-            err = (rc.stderr or rc.stdout).strip().splitlines()
-            sp.fail(f"modifyvm failed — {err[0] if err else 'unknown error'}")
+        error = attach_vm(vm_name)
+        if error:
+            sp.fail(f"modifyvm failed — {error}")
             go_back()
             return
         sp.succeed(f"Adapter 2 of '{vm_name}' set to host-only on {VBOX_IFACE}")
@@ -200,7 +251,11 @@ def _radmin_remove() -> None:
         step_fail("Install VirtualBox first")
         go_back()
         return
-    if not _bridge_iface_present():
+    if not _has_command("sudo"):
+        step_fail("Install sudo first")
+        go_back()
+        return
+    if not bridge_present():
         step_warn(f"{VBOX_IFACE} doesn't exist")
         go_back()
         return
@@ -211,11 +266,7 @@ def _radmin_remove() -> None:
     screen_header("Remove bridge")
     subprocess.run(["sudo", "-v"], check=False)
     with Spinner("Removing bridge") as sp:
-        error, _ = _run_steps([
-            (["sudo", "ip", "addr", "flush", "dev", VBOX_IFACE], ()),
-            (["sudo", "ip", "link", "set", VBOX_IFACE, "down"], ()),
-            ([VBOX_CMD, "hostonlyif", "remove", VBOX_IFACE], ()),
-        ])
+        error = remove_bridge(["sudo"])
         if error:
             sp.fail(f"Bridge removal failed — {error}")
         else:
@@ -231,7 +282,7 @@ def screen_radmin(cfg: dict) -> None:
     ]
     while True:
         radmin_ip = get_setting(cfg, "radmin_ip", "")
-        ready = bool(radmin_ip) and _bridge_iface_present() and _verify_bridge(radmin_ip)
+        ready = bool(radmin_ip) and bridge_present() and verify_bridge(radmin_ip)
         if ready:
             state = f"Bridge ready {C.MAG}✓{C.R}"
         else:

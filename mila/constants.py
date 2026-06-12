@@ -19,8 +19,6 @@ DD_ZIP = BIN_DIR / "DepotDownloader-linux-x64.zip"
 DD_URL = "https://github.com/SteamRE/DepotDownloader/releases/latest/download/DepotDownloader-linux-x64.zip"
 DD_API_URL = "https://api.github.com/repos/SteamRE/DepotDownloader/releases/latest"
 
-CE_INSTALLER = BIN_DIR / "CheatEngine.exe"
-
 LIBERATOR_GLOB = "Liberator-*.exe"
 LIBERATOR_API_URL = "https://api.github.com/repos/Xeralin/Liberator/releases/latest"
 

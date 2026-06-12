@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
 
-import fcntl
 import shutil
 import sys
-from typing import TextIO
 
 if sys.version_info < (3, 11):
     sys.exit("Mila requires Python 3.11 or newer")
 
-from mila.constants import CE_INSTALLER, CONFIG_FILE, DEFAULT_USERNAME, DOWNLOADS_DIR, LOCK_FILE, PROJECT_ROOT, VERSION
-from mila.style import C, clear, fmt_bytes, line, orn, screen_header, step_fail, step_warn
+from mila.constants import CONFIG_FILE, DEFAULT_USERNAME, DOWNLOADS_DIR, PROJECT_ROOT, VERSION
+from mila.style import clear, fmt_bytes, line, screen_header, step_fail, step_warn
 from mila.spinner import Spinner
 from mila.input import go_back, select
-from mila.config import get_setting, load_config, save_config, set_setting
+from mila.config import acquire_single_instance_lock, get_setting, load_config, save_config, set_setting
 from mila.manifest import installed_downloads, load_downloads
 from mila.radmin import detect_radmin_bridge, screen_radmin
 from mila.rpc import is_discord_installed, start_daemon
@@ -30,7 +28,6 @@ def _screen_tools(cfg: dict, downloads: list[dict]) -> None:
     actions = [
         ("Verify",             lambda: screen_verify(cfg, downloads)),
         ("Shears",             lambda: screen_shears(downloads)),
-        ("Update Heated Metal", lambda: screen_update_heatedmetal(cfg, downloads)),
         ("RadminVPN",          lambda: screen_radmin(cfg)),
         ("Delete prefix",      lambda: screen_delete_prefix(downloads)),
     ]
@@ -57,15 +54,13 @@ def _screen_info(cfg: dict, downloads: list[dict]) -> None:
     line(f"Username:          {get_setting(cfg, 'username', DEFAULT_USERNAME)}")
     steam_account = get_setting(cfg, "steam_account", "")
     line(f"Steam account:     {steam_account or 'None'}")
-    if CE_INSTALLER.exists():
-        unlock_marker = f"{C.MAG}✓{C.R} ready"
-    else:
-        unlock_marker = f"{C.YEL}⚠{C.R} needs {orn('CheatEngine.exe')} in {orn('bin/')}"
-    line(f"Unlock-All:        {unlock_marker}")
     line()
     line(f"Downloads:         {len(installed_downloads())}")
-    usage = sum(f.stat().st_size for f in DOWNLOADS_DIR.rglob("*") if f.is_file()) if DOWNLOADS_DIR.exists() else 0
-    line(f"Disk usage:        {fmt_bytes(usage)}")
+    try:
+        usage = sum(f.stat().st_size for f in DOWNLOADS_DIR.rglob("*") if f.is_file()) if DOWNLOADS_DIR.exists() else 0
+        line(f"Disk usage:        {fmt_bytes(usage)}")
+    except OSError:
+        line("Disk usage:        ?")
     free = shutil.disk_usage(DOWNLOADS_DIR if DOWNLOADS_DIR.exists() else PROJECT_ROOT).free
     line(f"Free disk space:   {fmt_bytes(free)}")
     line()
@@ -107,33 +102,28 @@ def _screen_main(cfg: dict, downloads: list[dict]) -> None:
             print()
             step_warn("Interrupted")
             go_back()
-
-
-def _acquire_single_instance_lock() -> TextIO:
-    fp = open(LOCK_FILE, "w")
-    try:
-        fcntl.flock(fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        step_fail("Mila is already running")
-        sys.exit(1)
-    return fp
+        except Exception as e:
+            step_fail(f"Unexpected error — {e}")
+            go_back()
 
 
 def main() -> int:
-    lock_fp = _acquire_single_instance_lock()
-    cfg = load_config()
-    if not CONFIG_FILE.exists():
-        save_config(cfg)
-    if not get_setting(cfg, "radmin_ip", ""):
-        rip = detect_radmin_bridge()
-        if rip:
-            set_setting(cfg, "radmin_ip", rip)
-            save_config(cfg)
-    if get_setting(cfg, "discord_rpc", False) and is_discord_installed():
-        start_daemon()
-    downloads = load_downloads()
-
+    lock_fp = acquire_single_instance_lock()
+    if lock_fp is None:
+        step_fail("Mila is already running")
+        return 1
     try:
+        cfg = load_config()
+        if not CONFIG_FILE.exists():
+            save_config(cfg)
+        if not get_setting(cfg, "radmin_ip", ""):
+            rip = detect_radmin_bridge()
+            if rip:
+                set_setting(cfg, "radmin_ip", rip)
+                save_config(cfg)
+        if get_setting(cfg, "discord_rpc", False) and is_discord_installed():
+            start_daemon()
+        downloads = load_downloads()
         _screen_main(cfg, downloads)
     except KeyboardInterrupt:
         print()

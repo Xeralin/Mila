@@ -1,9 +1,18 @@
+import json
 import re
 import sys
 import tomllib
 from pathlib import Path
 
-from mila.constants import DOWNLOADS_DIR, HM_FOLDER_SUFFIX, HM_KEY, LAUNCH_BAT, MANIFEST_FILE
+from mila.constants import (
+    DOWNLOADS_DIR,
+    HELIOS_JSON,
+    HM_FOLDER_SUFFIX,
+    HM_KEY,
+    LAUNCH_BAT,
+    MANIFEST_FILE,
+    THROWBACK_TOML,
+)
 
 _INSTALL_PATTERN = re.compile(r"^Y\d+S\d+_")
 
@@ -61,11 +70,30 @@ def launcher_name(is_hm: bool) -> str:
     return "RainbowSix.exe" if is_hm else LAUNCH_BAT
 
 
+def _is_installed(d: Path) -> bool:
+    is_hm = d.name.endswith(HM_FOLDER_SUFFIX)
+    if not (d / launcher_name(is_hm)).exists():
+        return False
+    return not is_hm or (d / HELIOS_JSON).exists()
+
+
 def installed_downloads() -> list[Path]:
-    return [
-        d for d in local_downloads()
-        if (d / launcher_name(d.name.endswith(HM_FOLDER_SUFFIX))).exists()
-    ]
+    return [d for d in local_downloads() if _is_installed(d)]
+
+
+def installed_username(d: Path) -> str:
+    toml_path = d / THROWBACK_TOML
+    if toml_path.exists():
+        m = re.search(r"username\s*=\s*'([^']*)'", toml_path.read_text())
+        if m:
+            return m.group(1)
+    json_path = d / HELIOS_JSON
+    if json_path.exists():
+        try:
+            return json.loads(json_path.read_text()).get("Username", "")
+        except (json.JSONDecodeError, OSError):
+            pass
+    return ""
 
 
 def display_name(folder_name: str, downloads: list[dict]) -> str:

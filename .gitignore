@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+*.part
+bin/*
+downloads/
+settings.toml
+*.build/
+*.dist/
+*.onefile-build/
+/downloader
+/data/
